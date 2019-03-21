@@ -52,9 +52,10 @@ var cam = {// Camera variables
 var images = {
   algae: "Cells/ghost.png",///
   eater: "Cells/eater.png",
-  protector: "Cells/protector.png",
+  basic: "Cells/basic.png",
   motor: "Cells/motor.png",///
   ghost: "Cells/ghost.png",
+  stem: "Cells/stem.png",
 
 
   load: function(that) {
@@ -73,86 +74,134 @@ images.load(images);
 
 
 /** "Classes" **/
+var Cell = function(type, parent, links, x, y, angle) {
+/*  TYPE KEY
+  # - Cell name [Sensor signal]
+  0 - Algae cell [1]
+  1 - Basic cell [2]
+  2 - Eater cell [3]
+  3 - Motor cell [2]
+  4 - Stem cell [2]
+  5 - Sensor cell [2]
+  6 - Neuron cell [NA]
 
-var AlgaeCell = function(parent, x, y) {
+SENSOR KEY
+[0] - Dead cell of any type
+[1] - Algae cell
+[2] - Harmless living cell
+[3] - Harmful eater cell
+[NA] - Sensor cell can't collide with this type of cell
+
+*/
+
+
+  this.type = type;
   this.parent = parent;
   this.parent.cells.push(this);
+  this.links = links;
   this.x = x;
   this.y = y;
+  this.angle = (angle==undefined) ? (Math.random()*Math.PI) : angle;
   this.r = 1;
   this.hr = this.r/2;
-  this.img = images.algae;
+  this.isSplitting = false;
 
-  this.update = function() {};
-
-  this.draw = function() {
-    ctx.drawImage(this.img, X(this.x-this.hr), Y(this.y-this.hr), S(this.r), S(this.r));
-  };
-};
-
-var EaterCell = function(parent, x, y) {
-  this.parent = parent;
-  this.parent.cells.push(this);
-  this.x = x;
-  this.y = y;
-  this.r = 1;
-  this.hr = this.r/2;
-  this.img = images.eater;
+  this.constructorSpecific = function() {
+    switch (this.type) {
+      case 0:// Algae
+        this.updateSpecific = function(){};
+        break;
+      case 1:// Basic
+        this.img = images.basic;
+        this.updateSpecific = function(){};
+        break;
+      case 2:// Eater
+        this.img = images.eater;
+        this.updateSpecific = function(){};
+        break;
+      case 3:// Motor
+        this.img = images.motor;
+        this.speed = 0.0001;
+        this.velX = Math.cos(this.angle)*this.speed;
+        this.velY = Math.sin(this.angle)*this.speed;
+        this.updateSpecific = function() {
+          this.x += this.velX;
+          this.y += this.velY;
+        };
+        break;
+      case 4:// Stem cell
+        this.img = images.stem;
+        this.updateSpecific = function(){};
+        break;
+    }
+  }
+  this.constructorSpecific();
 
   this.update = function() {
+    this.updateSpecific();
 
-
+    if (this.isSplitting > 0) {
+      var scd = this.splitCellData;
+      this.splitFrame ++;
+      // show stem cell image
+      if (this.splitFrame === 10) {
+        this.type = 4;
+      } else if (this.splitFrame === 29) {
+        scd.ref = new Cell(4, this.parent, [], this.x, this.y, scd.angle);
+      } else if (this.splitFrame >= 30 && this.splitFrame < 50) {
+        var scd = scd;
+        scd.ref.x += (this.x+scd.chX-scd.ref.x)/4;
+        scd.ref.y += (this.y+scd.chY-scd.ref.y)/4;
+      } else if (this.splitFrame === 50) {
+        scd.ref.links.push(this);
+        scd.ref.x = this.x+scd.chX;
+        scd.ref.y = this.y+scd.chY;
+        this.type = scd.originCellType;///
+        scd.ref.type = scd.type;
+        scd.ref.constructorSpecific();
+        scd.ref.isSplitting = true;
+        scd.ref.splitFrame = 50.5;
+      } else if (this.splitFrame >= 60) {
+        this.isSplitting = false;
+      }
+    }
   };
 
-  this.draw = function() {
-    ctx.drawImage(this.img, X(this.x-this.hr), Y(this.y-this.hr), S(this.r), S(this.r));
-  };
-};
-
-var ProtectorCell = function(parent, x, y) {
-  this.parent = parent;
-  this.parent.cells.push(this);
-  this.x = x;
-  this.y = y;
-  this.r = 1;
-  this.hr = this.r/2;
-  this.img = images.protector;
-
-  this.update = function() {};
-
-  this.draw = function() {
-    ctx.drawImage(this.img, X(this.x-this.hr), Y(this.y-this.hr), S(this.r), S(this.r));
-  };
-};
-
-var MotorCell = function(parent, x, y, angle) {
-  this.parent = parent;
-  this.parent.cells.push(this);
-  this.x = x;
-  this.y = y;
-  this.speed = 0.001;
-  this.angle = angle;
-  this.velX = Math.cos(angle)*this.speed;
-  this.velY = Math.sin(angle)*this.speed;
-  this.r = 1;
-  this.hr = this.r/2;
-  this.img = images.motor;
-
-  this.update = function() {
-    this.x += this.velX;
-    this.y += this.velY;
+  this.split = function(newType, angle) {
+    this.isSplitting = true;
+    this.splitFrame = 0;
+    this.splitCellData = {
+      originCellType: this.type,
+      type: newType,
+      angle: angle,
+      chX: Math.cos(angle),
+      chY: Math.sin(angle),
+    };
 
   };
 
   this.draw = function() {
     ctx.translate(X(this.x), Y(this.y));
     ctx.rotate(this.angle);
-    ctx.drawImage(this.img, S(-this.hr), S(-this.hr), S(this.r), S(this.r));
-    ctx.resetTransform();/////////////////////////////////////////////////wii
+    if (this.isSplitting) {
+      ctx.drawImage(images.stem, S(-this.hr), S(-this.hr), S(this.r), S(this.r));
+      if (this.splitFrame < 10) {
+        ctx.save();
+        ctx.globalAlpha = 1-this.splitFrame/10;
+        ctx.drawImage(this.img, S(-this.hr), S(-this.hr), S(this.r), S(this.r));
+        ctx.restore();
+      } else if (this.splitFrame >= 50) {
+        ctx.save();
+        ctx.globalAlpha = (this.splitFrame-50)/10;
+        ctx.drawImage(this.img, S(-this.hr), S(-this.hr), S(this.r), S(this.r));
+        ctx.restore();
+      }
+    } else {
+      ctx.drawImage(this.img, S(-this.hr), S(-this.hr), S(this.r), S(this.r));
+    }
+    ctx.resetTransform();
   };
 }
-
-
 
 var Organism = function(name, x, y) {
   organisms.push(this);
@@ -161,8 +210,8 @@ var Organism = function(name, x, y) {
   this.y = y;
   this.r = 1;
   this.cells = [];
-  new EaterCell(this, x, y);
-  new EaterCell(this, x+1, y);
+  new Cell(2, this, [], x, y);
+  new Cell(2, this, [], x+1, y);
 
   this.calculateCenter = function() {
     var points = [];
@@ -185,8 +234,8 @@ var Organism = function(name, x, y) {
 
     ///debugging
     ctx.beginPath();
-ctx.arc(X(this.x), Y(this.y), S(this.r), 0, 2 * Math.PI, false);
-ctx.lineWidth = 5;
+      ctx.arc(X(this.x), Y(this.y), S(this.r), 0, 2 * Math.PI, false);
+      ctx.lineWidth = 5;
       ctx.strokeStyle = '#003300';
       ctx.stroke();
 
@@ -211,14 +260,17 @@ var Builder = function() {
   this.isBuilding = false;
   this.options = [
     {
-      img: images.eater,
-      ref: EaterCell
+      img: images.basic,
+      name: "Basic Cell",
+      type: 1
     },{
-      img: images.protector,
-      ref: ProtectorCell
+      img: images.eater,
+      name: "Eater Cell",
+      type: 2
     },{
       img: images.motor,
-      ref: MotorCell
+      name: "Motor Cell",
+      type: 3
     },
   ];
   this.selected = 0;
@@ -267,26 +319,14 @@ var Builder = function() {
 
         // Build
         var canBuild = mouseIsPressedInstant && mouseButton === 1 && !this.isInsideMenu;
-
-        switch (this.selected) {
-          case 2:// Motor cells
-
-
-            ctx.translate(X(bestCellX), Y(bestCellY));
-            ctx.rotate(Math.atan2(revMouseY-bestCellY, revMouseX-bestCellX));
-            ctx.drawImage(this.options[this.selected].img, S(-0.5), S(-0.5), S(1), S(1));
-            ctx.resetTransform();
-            if (canBuild) {
-              new this.options[this.selected].ref(me, bestCellX, bestCellY, Math.atan2(revMouseY-bestCellY, revMouseX-bestCellX));
-            }
-            break;
-          default:// Normal cells
-
-            ctx.drawImage(this.options[this.selected].img, X(bestCellX-0.5), Y(bestCellY-0.5), S(1), S(1));
-            if (canBuild) {
-              new this.options[this.selected].ref(me, bestCellX, bestCellY);
-            }
+        ctx.translate(X(bestCellX), Y(bestCellY));
+        ctx.rotate(Math.atan2(revMouseY-bestCellY, revMouseX-bestCellX));
+        ctx.drawImage(this.options[this.selected].img, S(-0.5), S(-0.5), S(1), S(1));
+        ctx.resetTransform();
+        if (canBuild) {
+          bestCell.split(this.options[this.selected].type, Math.atan2(revMouseY-bestCell.y, revMouseX-bestCell.x))
         }
+
 
     }
 
