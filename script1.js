@@ -36,6 +36,7 @@ var frameCount = 0;
 var mouseX = mouseY = pmouseX = pmouseY = revMouseX = revMouseY = scroll = 0;
 var organisms = [];
 var downKeys = Object.create({});
+var motorKeyOrder = ["w", "s", "a", "d", "f"]
 var mouseIsPressed = mouseIsPressedInstant = false;
 var cam = {// Camera variables
   ht : 0.001,// ht = height, the number of pixels high the camera is from the ground
@@ -101,6 +102,10 @@ SENSOR KEY
   this.links = links;
   this.x = x;
   this.y = y;
+  this.velX = 0;
+  this.velY = 0;
+  this.waterForceX = 0;
+  this.waterForceY = 0;
   this.angle = (angle==undefined) ? (Math.random()*Math.PI) : angle;
   this.r = 1;
   this.hr = this.r/2;
@@ -121,9 +126,9 @@ SENSOR KEY
         break;
       case 3:// Motor
         this.img = images.motor;
-        this.speed = 0.0001;
-        this.velX = Math.cos(this.angle)*this.speed;
-        this.velY = Math.sin(this.angle)*this.speed;
+        this.speed = 0.05;
+        this.waterForceX = Math.cos(this.angle)*this.speed;
+        this.waterForceY = Math.sin(this.angle)*this.speed;
         this.updateSpecific = function() {
           this.x += this.velX;
           this.y += this.velY;
@@ -138,8 +143,11 @@ SENSOR KEY
   this.constructorSpecific();
 
   this.update = function() {
+
+    // Specific logic is executed before physics
     this.updateSpecific();
 
+    // Split logic
     if (this.isSplitting > 0) {
       var scd = this.splitCellData;
       this.splitFrame ++;
@@ -153,7 +161,17 @@ SENSOR KEY
         scd.ref.x += (this.x+scd.chX-scd.ref.x)/4;
         scd.ref.y += (this.y+scd.chY-scd.ref.y)/4;
       } else if (this.splitFrame === 50) {
+
+        this.links.push(scd.ref);
         scd.ref.links.push(this);
+        for (var i = 0; i < this.parent.cells.length; i ++) {
+          var other = this.parent.cells[i];
+          if (scd.ref !== other && other !== this && Math.hypot(other.y-scd.ref.y, other.x-scd.ref.x) < 1.2) {
+            scd.ref.links.push(other);
+            other.links.push(scd.ref);
+            console.log(scd.ref.links, other.links);
+          }
+        }
         scd.ref.x = this.x+scd.chX;
         scd.ref.y = this.y+scd.chY;
         this.type = scd.originCellType;///
@@ -165,18 +183,41 @@ SENSOR KEY
         this.isSplitting = false;
       }
     }
+
+    //
+
+    for (var i = 0; i < this.links.length; i ++) {
+      var other = this.links[i];
+      var chX = this.wasX-other.wasX;
+      var chY = this.wasY-other.wasY;
+      var distance = Math.hypot(chY, chX);
+      var difference = 1-distance;
+      this.velX += difference*chX/distance/20;
+      this.velY += difference*chY/distance/20;
+    }
+
+    this.x += this.velX;
+    this.y += this.velY;
+    this.velX += (this.waterForceX-this.velX)/10;
+    this.velY += (this.waterForceY-this.velY)/10;
+
+
+    this.wasX = this.x;
+    this.wasY = this.y;
   };
 
   this.split = function(newType, angle) {
-    this.isSplitting = true;
-    this.splitFrame = 0;
-    this.splitCellData = {
-      originCellType: this.type,
-      type: newType,
-      angle: angle,
-      chX: Math.cos(angle),
-      chY: Math.sin(angle),
-    };
+    if (!this.isSplitting || this.splitFrame > 50) {
+      this.isSplitting = true;
+      this.splitFrame = 0;
+      this.splitCellData = {
+        originCellType: this.type,
+        type: newType,
+        angle: angle,
+        chX: Math.cos(angle),
+        chY: Math.sin(angle),
+      };
+    }
 
   };
 
@@ -200,6 +241,18 @@ SENSOR KEY
       ctx.drawImage(this.img, S(-this.hr), S(-this.hr), S(this.r), S(this.r));
     }
     ctx.resetTransform();
+
+
+
+    //debugging
+    ctx.strokeStyle = 'green';
+    for (var i = 0; i < this.links.length; i ++) {
+      ctx.beginPath();
+
+      ctx.moveTo(X(this.x), Y(this.y));
+      ctx.lineTo(X(this.links[i].x), Y(this.links[i].y));
+      ctx.stroke();
+    }
   };
 }
 
@@ -211,7 +264,6 @@ var Organism = function(name, x, y) {
   this.r = 1;
   this.cells = [];
   new Cell(2, this, [], x, y);
-  new Cell(2, this, [], x+1, y);
 
   this.calculateCenter = function() {
     var points = [];
